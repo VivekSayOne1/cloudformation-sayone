@@ -1,0 +1,453 @@
+Parameters:
+  Ec2Type: 
+    Type: String
+    Default: 't2.micro'
+    Description: instance type
+  DiskSizeEc2:
+    Type: String
+    Default: "8" 
+    Description: "Add volume size of ec2"   
+  Key:
+    Type: String
+    Default: cloudformation
+    Description: The key used for ec2 
+  Imageid:
+    Type: String
+    Default: ami-08d4ac5b634553e16
+    Description: ami id of ec2 
+  AvailabilityZoneforec2:
+    Type: String
+    Default: 'us-east-1b'
+    Description: availability zone for ec2  
+  s3BucketName:
+    Type: String
+    Default: sayone-bucket
+    Description: Name for s3
+  SubDomainName:
+    Type: String 
+    Default: 'cdn.sayonewar123.tk'
+    Description: Subdomain name
+  Route53HostedZoneId:
+    Type: String
+    Default: 'Z03959452GIXMV8N091PM'
+    Description: Hosted Zone id of Route53
+  RDSInstanceIdentifier:
+     Type: String 
+     Default: 'mydbinstance'
+     Description: Name for the rds 
+  RDSDBname:
+    Type: String 
+    Default: MyDB
+    Description: Db name 
+  DBinstancetype:
+    Type: String 
+    Default: db.m6g.large
+    Description: instance type of rds 
+  rdsstorage:
+    Type: String 
+    Default: 100
+    Description: storage for rds
+  RdsengineType:
+    Type: String 
+    Default: postgres
+    Description: rds engine type
+  Rdsengineversion:
+    Type: String 
+    Default: "13.7"
+    Description: version for rds 
+  Rdsdbusername:
+    Type: String 
+    Default: dbadmin
+    Description: db user name 
+  Rdsdbuserpassword:
+    Type: String 
+    Default: adminpassword
+    Description: db user password 
+  Redisnodetype:
+    Type: String 
+    Default: cache.m6g.large
+    Description: Redis Node Type 
+  Redisnumofnodes:
+    Type: String 
+    Default: '1'
+    Description: Number of nodes in redis 
+  Opensearchdomainname:
+    Type: String 
+    Default: test 
+    Description: domain name for Opensearch 
+  Opensearchengineversion:
+    Type: String
+    Default: 'OpenSearch_1.0'
+    Description: engine version of opensearch 
+  opensearchinstancetype:
+    Type: String 
+    Default: 't3.small.search'
+    Description: instance type for opensearch 
+  Opensearchvolumesize:
+    Type: String 
+    Default: '20'
+    Description: volume size of opensearch 
+
+
+  
+  
+  
+Resources:
+  
+  
+  sayoneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable Port 80 and 22
+      VpcId: !Ref myVPC
+      Tags:
+      - Key: sg-80-22
+        Value: sayone-sg
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80 
+        SourceSecurityGroupId: !Ref ELBSecurityGroup
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+  mySubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: "us-east-1b"
+  mySubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: "us-east-1a"    
+  myInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: name
+        Value: sayoneigw
+  myRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:  !Ref myVPC
+  myRoute:
+    Type: AWS::EC2::Route
+    DependsOn: myInternetGateway
+    Properties:
+       RouteTableId:
+         Ref: myRouteTable
+       DestinationCidrBlock: 0.0.0.0/0
+       GatewayId:
+         Ref: myInternetGateway 
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref myRouteTable
+      SubnetId: !Ref mySubnet
+  PublicSubnet1RouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref myRouteTable
+      SubnetId: !Ref mySubnet2
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId:
+        Ref: myVPC
+      InternetGatewayId:
+        Ref: myInternetGateway        
+            
+
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+        AccessControl: Private
+        BucketName: !Ref s3BucketName
+        Tags:
+          - Key: description
+            Value: "Private files"
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Action:
+           - 's3:GetObject'
+          Resource: 
+           - arn:aws:s3:::sayone-bucket/*
+          Principal: 
+             CanonicalUser: !GetAtt CloudFrontOriginIdentity.S3CanonicalUserId
+           
+            
+  CloudFrontOriginIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: 'origin identity'
+  publicDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt Bucket.DomainName
+            Id: S3-private-bucket
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginIdentity}'
+        Enabled: 'true'
+        Aliases: 
+          - 
+           !Ref SubDomainName
+        Comment: Some comment
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          TargetOriginId: S3-private-bucket
+          ForwardedValues:
+            QueryString: 'false'
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+        ViewerCertificate:
+          AcmCertificateArn: !Ref ACMSayone
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1    
+  Elbforec2:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties: 
+      Name: 'elbec2'
+      Subnets: 
+        - !Ref mySubnet
+        - !Ref mySubnet2
+      SecurityGroups:
+        - !Ref ELBSecurityGroup
+       
+  Elblistener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Elbforec2
+      Port: 80
+      Protocol: 'HTTP' 
+      DefaultActions: 
+        -
+          Order: 1
+          TargetGroupArn: !Ref TargetGroupELB
+          Type: "forward"
+     
+
+
+  TargetGroupELB:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties: 
+      Name: Elb-target-group
+      Port: 80
+      Protocol: 'HTTP'
+      TargetType: instance
+    
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref myVPC
+  ELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable Port 80 
+      VpcId: !Ref myVPC
+      Tags:
+      - Key: sg-80
+        Value: elb-sg
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0  
+ 
+  mylaunchtemplate1:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: mylaunchtemplate
+      LaunchTemplateData: 
+        ImageId: !Ref Imageid
+        KeyName: !Ref Key 
+        NetworkInterfaces:
+          - 
+            SubnetId: !Ref mySubnet
+            AssociatePublicIpAddress: true  
+            DeviceIndex: 0 
+            Groups:
+              - !Ref sayoneSecurityGroup     
+        
+        InstanceType: 
+          !Ref Ec2Type
+        BlockDeviceMappings: 
+          - DeviceName: /dev/sda1
+            Ebs: 
+              VolumeSize: !Ref DiskSizeEc2
+              VolumeType: gp2
+        
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+              sudo apt-get update && sudo apt-get upgrade -y
+              sudo su - ubuntu
+              sudo apt-get install nginx -y
+              sudo systemctl enable nginx
+              sudo systemctl start nginx
+              sudo bash -c 'echo hello from sayone > /var/www/html/index.html'    
+  Autoscalinggp:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties: 
+      #AutoScalingGroupName: 'sayoneag11'
+      LaunchTemplate:          
+        LaunchTemplateId: !Ref mylaunchtemplate1
+        Version: !GetAtt mylaunchtemplate1.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref TargetGroupELB  
+      AvailabilityZones: 
+        - !Ref AvailabilityZoneforec2
+        
+    
+      TerminationPolicies: 
+        - NewestInstance
+      MaxSize: 3
+      MinSize: 1
+      DesiredCapacity: 1
+      VPCZoneIdentifier: 
+        - !Ref mySubnet
+
+  Autoscalingpolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref Autoscalinggp
+      PolicyType: StepScaling 
+      StepAdjustments: 
+        -
+          MetricIntervalLowerBound: 0
+          MetricIntervalUpperBound: 10
+          ScalingAdjustment: -1
+        -
+          MetricIntervalLowerBound: 10
+          MetricIntervalUpperBound: 20
+          ScalingAdjustment: -1
+        -
+          MetricIntervalLowerBound: 20
+          MetricIntervalUpperBound: 30
+          ScalingAdjustment: -1
+        -
+          MetricIntervalLowerBound: 30
+          MetricIntervalUpperBound: 50
+          ScalingAdjustment: 1
+        -
+          MetricIntervalLowerBound: 50  
+          ScalingAdjustment: 1
+  Cloudwatchforag:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Ref Autoscalingpolicy
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: CPUUtilization
+      Period: 60
+      Namespace: 'AWS/AutoScaling'
+      Statistic: Average
+      Threshold: 20 
+ 
+  redis:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      CacheNodeType: !Ref Redisnodetype
+      CacheSubnetGroupName: !Ref SubnetGroup
+      Engine: redis
+      NumCacheNodes: !Ref Redisnumofnodes
+      VpcSecurityGroupIds:
+        - !GetAtt 
+          - ElasticacheSecurityGroup
+          - GroupId
+  ElasticacheSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Elasticache Security Group
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref sayoneSecurityGroup
+  SubnetGroup:
+    Type: 'AWS::ElastiCache::SubnetGroup'
+    Properties:
+      Description: Cache Subnet Group
+      SubnetIds:
+        - !Ref mySubnet
+        - !Ref mySubnet2
+
+  Opensearch:
+    Type: AWS::OpenSearchService::Domain
+    Properties:
+      DomainName: !Ref Opensearchdomainname
+      EngineVersion: !Ref Opensearchengineversion
+      ClusterConfig:
+        DedicatedMasterEnabled: true
+        InstanceCount: '2'
+        ZoneAwarenessEnabled: true
+        InstanceType: !Ref opensearchinstancetype
+        DedicatedMasterType: 't3.small.search'
+        DedicatedMasterCount: '3'
+      EBSOptions:
+        EBSEnabled: true
+        Iops: '0'
+        VolumeSize: !Ref  Opensearchvolumesize
+        VolumeType: 'gp2'
+  MyDB:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBInstanceIdentifier: !Ref RDSInstanceIdentifier
+      DBName: !Ref RDSDBname
+      DBInstanceClass: !Ref DBinstancetype
+      AllocatedStorage: !Ref rdsstorage
+      Engine: !Ref RdsengineType 
+      EngineVersion: !Ref Rdsengineversion
+      MasterUsername: !Ref Rdsdbusername
+      MasterUserPassword: !Ref Rdsdbuserpassword
+         
+          
+  DNSRecords: 
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref Route53HostedZoneId
+      RecordSets:
+        - Name: !Ref SubDomainName
+          Type: A
+          AliasTarget:
+            HostedZoneId: 'Z2FDTNDATAQYW2'
+            DNSName: !GetAtt publicDistribution.DomainName
+  
+  ACMSayone:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref SubDomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - 
+         DomainName: !Ref SubDomainName
+         HostedZoneId: !Ref Route53HostedZoneId
+
+  
+  
+      
+      
