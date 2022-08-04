@@ -37,7 +37,7 @@ Parameters:
      Description: Name for the rds 
   RDSDBname:
     Type: String 
-    Default: MyDB
+    Default: MyDB27
     Description: Db name 
   DBinstancetype:
     Type: String 
@@ -419,12 +419,36 @@ Resources:
       DBInstanceIdentifier: !Ref RDSInstanceIdentifier
       DBName: !Ref RDSDBname
       DBInstanceClass: !Ref DBinstancetype
+      DBSubnetGroupName: !Ref RDSSubnet
       AllocatedStorage: !Ref rdsstorage
       Engine: !Ref RdsengineType 
       EngineVersion: !Ref Rdsengineversion
       MasterUsername: !Ref Rdsdbusername
       MasterUserPassword: !Ref Rdsdbuserpassword
-         
+      VPCSecurityGroups: 
+        - !Ref RDSSecurityGroup
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable Port 80 
+      VpcId: !Ref myVPC
+      Tags:
+      - Key: sg-80
+        Value: rds-sg
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 5432
+        ToPort: 5432
+        SourceSecurityGroupId: !Ref sayoneSecurityGroup
+  RDSSubnet:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: 'my rds'
+      DBSubnetGroupName: 'rds'
+      SubnetIds: 
+        - !Ref mySubnet
+        - !Ref mySubnet2
+
           
   DNSRecords: 
     Type: AWS::Route53::RecordSetGroup
@@ -446,6 +470,12 @@ Resources:
         - 
          DomainName: !Ref SubDomainName
          HostedZoneId: !Ref Route53HostedZoneId
+
+  
+  
+      
+      
+
 
   
   
